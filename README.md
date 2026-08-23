@@ -1,25 +1,14 @@
 # CloakChain (mnt-native)
 
 CloakChain is a privacy-preserving coin system built on real, native Groth16
-recursion over the MNT4-753/MNT6-753 pairing-friendly curve cycle (no zkVM,
-no SP1 — proving happens directly against `ark-groth16` circuits written
-with `ark-relations`/`ark-r1cs-std`).
-
-This branch demonstrates a full genesis -> Alice -> Bob -> Carol coin chain:
-a genesis mint, a receipt circuit that recursively verifies the wrapped
-genesis proof, a 1-in/2-out spend (with real value conservation, not just
-equality), a second-generation receipt, and a follow-on spend — nine real
-Groth16 proofs end to end.
+recursion over the MNT4-753/MNT6-753 pairing-friendly curve cycle.
 
 ## Requirements
 
 - [Rust](https://rustup.rs/) — the pinned toolchain in `rust-toolchain` is
   installed automatically by `rustup` the first time you build.
 - A machine with enough RAM/CPU to run native Groth16 setup+prove over
-  753-bit MNT curves. This is heavier than SNARK-friendly-curve toy demos;
-  budget real time and memory headroom, particularly for `--prove`.
-
-No SP1, no GPU, and no external prover network are required.
+  753-bit MNT curves.
 
 ## Workspace layout
 
@@ -52,8 +41,8 @@ RUST_LOG=info cargo run --release -- --execute
 
 ### Full chain, real proofs
 
-Runs the whole genesis -> Alice -> Bob -> Carol chain, once, in order —
-nine real Groth16 proofs. Each step's setup+prove is farmed out to a fresh
+Runs the whole genesis -> Alice -> Bob -> Carol chain, once, in order. 
+Each step's setup+prove is farmed out to a fresh
 subprocess so the reported peak-memory figure reflects that step's own
 footprint (via the kernel's `VmHWM`) rather than a same-process running
 high-water mark.
@@ -72,11 +61,6 @@ of the normal demo.
 ```sh
 cargo run --release -- --grid-cell
 ```
-
-> The `--internal-kind`/`--internal-witness`/`--internal-output` flags are
-> hidden/internal — they're how the binary re-invokes itself as a single
-> setup+prove subprocess for `--prove` and `--grid-cell`, and aren't meant
-> for direct use.
 
 ## Tests
 
