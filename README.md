@@ -1,4 +1,4 @@
-# CloakChain (mnt-native)
+# CloakChain
 
 CloakChain is a privacy-preserving coin system built on real, native Groth16
 recursion over the MNT4-753/MNT6-753 pairing-friendly curve cycle.
