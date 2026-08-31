@@ -1,8 +1,8 @@
 use ark_crypto_primitives::snark::{BooleanInputVar, SNARKGadget};
 use ark_ff::{BigInteger, Field, PrimeField};
-use ark_groth16::{
-    constraints::{Groth16VerifierGadget, ProofVar, VerifyingKeyVar},
-    Groth16, Proof, ProvingKey, VerifyingKey,
+use ark_gm17::{
+    constraints::{GM17VerifierGadget, ProofVar, VerifyingKeyVar},
+    GM17, Proof, ProvingKey, VerifyingKey,
 };
 use ark_mnt4_753::MNT4_753;
 use ark_mnt6_753::MNT6_753;
@@ -29,6 +29,7 @@ fn opt<T: Clone>(o: &Option<T>) -> Result<T, SynthesisError> {
 
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct WrapCircuit<const N: usize> {
+
     pub inner_vk: VerifyingKey<MNT4_753>,
     pub inner_proof: Option<Proof<MNT4_753>>,
     pub inner_public_inputs: Option<[Fr4; N]>,
@@ -36,30 +37,26 @@ pub struct WrapCircuit<const N: usize> {
 
 impl<const N: usize> ConstraintSynthesizer<Fr6> for WrapCircuit<N> {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr6>) -> Result<(), SynthesisError> {
+
         let bit_len = Fr4::MODULUS_BIT_SIZE as usize;
         let mut per_value_bits: Vec<Vec<Boolean<Fr6>>> = Vec::with_capacity(N);
         for i in 0..N {
-            let value_bits: Option<Vec<bool>> = self
-                .inner_public_inputs
-                .as_ref()
-                .map(|v| v[i].into_bigint().to_bits_le());
+            let value_bits: Option<Vec<bool>> =
+                self.inner_public_inputs.as_ref().map(|v| v[i].into_bigint().to_bits_le());
             let bits: Vec<Boolean<Fr6>> = (0..bit_len)
-                .map(|j| {
-                    Boolean::new_witness(cs.clone(), || opt(&value_bits.as_ref().map(|b| b[j])))
-                })
+                .map(|j| Boolean::new_witness(cs.clone(), || opt(&value_bits.as_ref().map(|b| b[j]))))
                 .collect::<Result<_, _>>()?;
             per_value_bits.push(bits);
         }
         let input_var = BooleanInputVar::<Fr4, Fr6>::new(per_value_bits.clone());
 
-        let vk_var =
-            VerifyingKeyVar::<MNT4_753, MNT4PairingVar>::new_constant(cs.clone(), &self.inner_vk)?;
-        let proof_var = ProofVar::<MNT4_753, MNT4PairingVar>::new_witness(cs.clone(), || {
-            opt(&self.inner_proof)
-        })?;
+        let vk_var = VerifyingKeyVar::<MNT4_753, MNT4PairingVar>::new_constant(cs.clone(), &self.inner_vk)?;
+        let proof_var = ProofVar::<MNT4_753, MNT4PairingVar>::new_witness(cs.clone(), || opt(&self.inner_proof))?;
         let pvk = vk_var.prepare()?;
-        let ok = Groth16VerifierGadget::<MNT4_753, MNT4PairingVar>::verify_with_processed_vk(
-            &pvk, &input_var, &proof_var,
+        let ok = GM17VerifierGadget::<MNT4_753, MNT4PairingVar>::verify_with_processed_vk(
+            &pvk,
+            &input_var,
+            &proof_var,
         )?;
         ok.enforce_equal(&Boolean::TRUE)?;
 
@@ -113,17 +110,14 @@ pub fn setup<const N: usize, R: RngCore + CryptoRng>(
     inner_vk: VerifyingKey<MNT4_753>,
     rng: &mut R,
 ) -> Result<(ProvingKey<MNT6_753>, VerifyingKey<MNT6_753>), SynthesisError> {
+
     let dummy_proof = Proof::<MNT4_753> {
         a: ark_mnt4_753::G1Affine::identity(),
         b: ark_mnt4_753::G2Affine::identity(),
         c: ark_mnt4_753::G1Affine::identity(),
     };
-    let circuit = WrapCircuit::<N> {
-        inner_vk,
-        inner_proof: Some(dummy_proof),
-        inner_public_inputs: None,
-    };
-    Groth16::<MNT6_753>::circuit_specific_setup(circuit, rng)
+    let circuit = WrapCircuit::<N> { inner_vk, inner_proof: Some(dummy_proof), inner_public_inputs: None };
+    GM17::<MNT6_753>::circuit_specific_setup(circuit, rng)
 }
 
 pub fn prove<const N: usize, R: RngCore + CryptoRng>(
@@ -131,7 +125,7 @@ pub fn prove<const N: usize, R: RngCore + CryptoRng>(
     circuit: WrapCircuit<N>,
     rng: &mut R,
 ) -> Result<Proof<MNT6_753>, SynthesisError> {
-    Groth16::<MNT6_753>::prove(pk, circuit, rng)
+    GM17::<MNT6_753>::prove(pk, circuit, rng)
 }
 
 pub fn verify(
@@ -139,7 +133,7 @@ pub fn verify(
     public_inputs: &[Fr6],
     proof: &Proof<MNT6_753>,
 ) -> Result<bool, SynthesisError> {
-    Groth16::<MNT6_753>::verify(vk, public_inputs, proof)
+    GM17::<MNT6_753>::verify(vk, public_inputs, proof)
 }
 
 #[cfg(test)]
@@ -161,10 +155,7 @@ mod tests {
             c: Option<Fr>,
         }
         impl ConstraintSynthesizer<Fr> for Toy {
-            fn generate_constraints(
-                self,
-                cs: ConstraintSystemRef<Fr>,
-            ) -> Result<(), SynthesisError> {
+            fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
                 let a = FpVar::new_input(cs.clone(), || opt(&self.a))?;
                 let b = FpVar::new_witness(cs.clone(), || opt(&self.b))?;
                 let c = FpVar::new_input(cs.clone(), || opt(&self.c))?;
@@ -172,29 +163,17 @@ mod tests {
             }
         }
 
-        let (toy_pk, toy_vk) =
-            Groth16::<MNT4_753>::circuit_specific_setup(Toy::default(), &mut rng).unwrap();
+        let (toy_pk, toy_vk) = GM17::<MNT4_753>::circuit_specific_setup(Toy::default(), &mut rng).unwrap();
         let a = Fr::from(6u64);
         let b = Fr::from(7u64);
         let c = Fr::from(42u64);
-        let toy_proof = Groth16::<MNT4_753>::prove(
-            &toy_pk,
-            Toy {
-                a: Some(a),
-                b: Some(b),
-                c: Some(c),
-            },
-            &mut rng,
-        )
-        .unwrap();
-        assert!(Groth16::<MNT4_753>::verify(&toy_vk, &[a, c], &toy_proof).unwrap());
+        let toy_proof =
+            GM17::<MNT4_753>::prove(&toy_pk, Toy { a: Some(a), b: Some(b), c: Some(c) }, &mut rng).unwrap();
+        assert!(GM17::<MNT4_753>::verify(&toy_vk, &[a, c], &toy_proof).unwrap());
 
         let (wrap_pk, wrap_vk) = setup::<2, _>(toy_vk, &mut rng).unwrap();
-        let wrap_circuit = WrapCircuit::<2> {
-            inner_vk: toy_pk.vk.clone(),
-            inner_proof: Some(toy_proof),
-            inner_public_inputs: Some([a, c]),
-        };
+        let wrap_circuit =
+            WrapCircuit::<2> { inner_vk: toy_pk.vk.clone(), inner_proof: Some(toy_proof), inner_public_inputs: Some([a, c]) };
         let wrap_proof = prove::<2, _>(&wrap_pk, wrap_circuit, &mut rng).unwrap();
 
         let expected_public_inputs = public_input_chunks(&[a, c]);

@@ -45,6 +45,7 @@ mod tests {
 
     #[test]
     fn mnt4_and_mnt6_configs_differ() {
+
         let a = mnt4_753_fr_poseidon_config();
         let b = mnt6_753_fr_poseidon_config();
         assert_eq!(a.full_rounds, b.full_rounds);
@@ -58,10 +59,7 @@ mod tests {
         let cfg = mnt4_753_fr_poseidon_config();
         let hash_once = || {
             let mut sponge = PoseidonSponge::new(&cfg);
-            sponge.absorb(&vec![
-                ark_mnt4_753::Fr::from(7u64),
-                ark_mnt4_753::Fr::from(9u64),
-            ]);
+            sponge.absorb(&vec![ark_mnt4_753::Fr::from(7u64), ark_mnt4_753::Fr::from(9u64)]);
             sponge.squeeze_native_field_elements(1)[0]
         };
         assert_eq!(hash_once(), hash_once());

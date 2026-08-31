@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use ark_ec::pairing::Pairing;
-use ark_groth16::{Proof, VerifyingKey};
+use ark_gm17::{Proof, VerifyingKey};
 use ark_mnt4_753::MNT4_753;
 use ark_mnt6_753::MNT6_753;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
@@ -28,12 +28,16 @@ struct Args {
     execute: bool,
     #[arg(long)]
     prove: bool,
+
     #[arg(long)]
     grid_cell: bool,
+
     #[arg(long, hide = true)]
     internal_kind: Option<String>,
+
     #[arg(long, hide = true)]
     internal_witness: Option<String>,
+
     #[arg(long, hide = true)]
     internal_output: Option<String>,
 }
@@ -53,32 +57,16 @@ impl Party {
         let enc_pk = derive_enc_pk(&enc_sk);
         let sk_p = OwnerScalar::from(seed as u64 + 100);
         let pk_p = derive_owner_pk(&sk_p);
-        Self {
-            name,
-            enc_sk,
-            enc_pk,
-            sk_p,
-            pk_p,
-        }
+        Self { name, enc_sk, enc_pk, sk_p, pk_p }
     }
 
     fn genesis() -> Self {
-        Self {
-            name: "Genesis",
-            enc_sk: [0u8; 32],
-            enc_pk: [0u8; 32],
-            sk_p: genesis_sk(),
-            pk_p: genesis_pk(),
-        }
+        Self { name: "Genesis", enc_sk: [0u8; 32], enc_pk: [0u8; 32], sk_p: genesis_sk(), pk_p: genesis_pk() }
     }
 }
 
 fn coin(seed: u8, value: u64, owner_pk: OwnerPk) -> Coin {
-    Coin {
-        value,
-        rand: Fr::from(seed as u64 + 1000),
-        owner_pk,
-    }
+    Coin { value, rand: Fr::from(seed as u64 + 1000), owner_pk }
 }
 
 fn pad_outputs(real: &[Fr]) -> [Fr; MAX_OUTPUTS] {
@@ -90,7 +78,9 @@ fn pad_outputs(real: &[Fr]) -> [Fr; MAX_OUTPUTS] {
 fn make_tx(
     id: u64,
     sender_enc_sk: [u8; 32],
+
     _sender_sk_p: &OwnerScalar,
+
     _input_coins: &[Coin],
     outputs: &[(Coin, [u8; 32])],
 ) -> (Transaction, [u8; 32], Vec<[u8; 32]>) {
@@ -111,29 +101,18 @@ fn make_tx(
         .enumerate()
         .map(|(i, (c, _))| cloakkchain_lib::build_note_enc(&session_key, i, c))
         .collect();
-    let tx = Transaction {
-        id,
-        output_commitments,
-        note_encs,
-        spend_proof: vec![],
-    };
+    let tx = Transaction { id, output_commitments, note_encs, spend_proof: vec![] };
     (tx, session_key, recipient_enc_pks)
 }
 
-fn wait_tracking_peak_memory(
-    mut child: std::process::Child,
-) -> (std::process::ExitStatus, Option<u64>) {
+fn wait_tracking_peak_memory(mut child: std::process::Child) -> (std::process::ExitStatus, Option<u64>) {
     let pid = child.id();
     let mut peak_kb: Option<u64> = None;
     loop {
         if let Ok(status_text) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
             for line in status_text.lines() {
                 if let Some(rest) = line.strip_prefix("VmHWM:") {
-                    if let Some(kb) = rest
-                        .split_whitespace()
-                        .next()
-                        .and_then(|s| s.parse::<u64>().ok())
-                    {
+                    if let Some(kb) = rest.split_whitespace().next().and_then(|s| s.parse::<u64>().ok()) {
                         peak_kb = Some(peak_kb.map_or(kb, |p: u64| p.max(kb)));
                     }
                 }
@@ -149,28 +128,21 @@ fn wait_tracking_peak_memory(
 fn count_constraints<F: ark_ff::Field, C: ConstraintSynthesizer<F> + Clone>(circuit: &C) -> usize {
     let cs = ConstraintSystem::<F>::new_ref();
     cs.set_mode(ark_relations::r1cs::SynthesisMode::Setup);
-    circuit
-        .clone()
-        .generate_constraints(cs.clone())
-        .expect("synthesize constraints for counting");
+    circuit.clone().generate_constraints(cs.clone()).expect("synthesize constraints for counting");
     cs.num_constraints()
 }
 
 fn write_vk_proof<E: Pairing>(vk: &VerifyingKey<E>, proof: &Proof<E>, path: &std::path::Path) {
     let mut buf = Vec::new();
-    vk.serialize_compressed(&mut buf)
-        .expect("serialize verifying key");
-    proof
-        .serialize_compressed(&mut buf)
-        .expect("serialize proof");
+    vk.serialize_compressed(&mut buf).expect("serialize verifying key");
+    proof.serialize_compressed(&mut buf).expect("serialize proof");
     std::fs::write(path, buf).expect("write output file");
 }
 
 fn read_vk_proof<E: Pairing>(path: &std::path::Path) -> (VerifyingKey<E>, Proof<E>) {
     let bytes = std::fs::read(path).expect("read output file");
     let mut cursor = &bytes[..];
-    let vk =
-        VerifyingKey::<E>::deserialize_compressed(&mut cursor).expect("deserialize verifying key");
+    let vk = VerifyingKey::<E>::deserialize_compressed(&mut cursor).expect("deserialize verifying key");
     let proof = Proof::<E>::deserialize_compressed(&mut cursor).expect("deserialize proof");
     (vk, proof)
 }
@@ -183,9 +155,7 @@ fn run_step_subprocess<C: CanonicalSerialize, E: Pairing>(
     let output_path = std::env::temp_dir().join(format!("cloakkchain_{kind}_output.bin"));
 
     let mut witness_buf = Vec::new();
-    circuit
-        .serialize_compressed(&mut witness_buf)
-        .expect("serialize witness");
+    circuit.serialize_compressed(&mut witness_buf).expect("serialize witness");
     std::fs::write(&witness_path, witness_buf).expect("write witness file");
 
     let exe = std::env::current_exe().expect("current_exe");
@@ -203,10 +173,7 @@ fn run_step_subprocess<C: CanonicalSerialize, E: Pairing>(
     let child = cmd.spawn().expect("spawn proving subprocess");
     let (status, peak_mem_kb) = wait_tracking_peak_memory(child);
     let prove_secs = t.elapsed().as_secs_f64();
-    assert!(
-        status.success(),
-        "subprocess for {kind} exited with {status}"
-    );
+    assert!(status.success(), "subprocess for {kind} exited with {status}");
 
     let (vk, proof) = read_vk_proof::<E>(&output_path);
     let _ = std::fs::remove_file(&witness_path);
@@ -221,56 +188,40 @@ fn run_internal_step(kind: &str, witness_path: &str, output_path: &str) {
 
     match kind {
         "genesis" => {
-            let circuit = GenesisSpendCircuit::deserialize_compressed(&witness_bytes[..])
-                .expect("deserialize witness");
+            let circuit = GenesisSpendCircuit::deserialize_compressed(&witness_bytes[..]).expect("deserialize witness");
             let (pk, vk) = cloakkchain_circuit_spend::setup(&mut rng).unwrap();
             let proof = cloakkchain_circuit_spend::prove(&pk, circuit, &mut rng).unwrap();
             write_vk_proof::<MNT4_753>(&vk, &proof, output_path);
         }
         "spend_non_genesis" => {
-            let circuit = SpendStepCircuit::deserialize_compressed(&witness_bytes[..])
-                .expect("deserialize witness");
+            let circuit = SpendStepCircuit::deserialize_compressed(&witness_bytes[..]).expect("deserialize witness");
             let wrap_vk = circuit.wrap_vk.clone();
             let (pk, vk) = cloakkchain_circuit_spend::setup_non_genesis(wrap_vk, &mut rng).unwrap();
-            let proof =
-                cloakkchain_circuit_spend::prove_non_genesis(&pk, circuit, &mut rng).unwrap();
+            let proof = cloakkchain_circuit_spend::prove_non_genesis(&pk, circuit, &mut rng).unwrap();
             write_vk_proof::<MNT4_753>(&vk, &proof, output_path);
         }
         "receipt" => {
-            let circuit = ReceiptStepCircuit::deserialize_compressed(&witness_bytes[..])
-                .expect("deserialize witness");
+            let circuit = ReceiptStepCircuit::deserialize_compressed(&witness_bytes[..]).expect("deserialize witness");
             let wrap_vk = circuit.wrap_vk.clone();
             let (pk, vk) = cloakkchain_circuit_coinproof::setup(wrap_vk, &mut rng).unwrap();
             let proof = cloakkchain_circuit_coinproof::prove(&pk, circuit, &mut rng).unwrap();
             write_vk_proof::<MNT4_753>(&vk, &proof, output_path);
         }
         "wrap6" => {
-            let circuit = WrapCircuit::<GENESIS_SPEND_PUBLIC_INPUTS>::deserialize_compressed(
-                &witness_bytes[..],
-            )
-            .expect("deserialize witness");
+            let circuit = WrapCircuit::<GENESIS_SPEND_PUBLIC_INPUTS>::deserialize_compressed(&witness_bytes[..])
+                .expect("deserialize witness");
             let inner_vk = circuit.inner_vk.clone();
-            let (pk, vk) = cloakkchain_circuit_wrap::setup::<GENESIS_SPEND_PUBLIC_INPUTS, _>(
-                inner_vk, &mut rng,
-            )
-            .unwrap();
-            let proof = cloakkchain_circuit_wrap::prove::<GENESIS_SPEND_PUBLIC_INPUTS, _>(
-                &pk, circuit, &mut rng,
-            )
-            .unwrap();
+            let (pk, vk) =
+                cloakkchain_circuit_wrap::setup::<GENESIS_SPEND_PUBLIC_INPUTS, _>(inner_vk, &mut rng).unwrap();
+            let proof = cloakkchain_circuit_wrap::prove::<GENESIS_SPEND_PUBLIC_INPUTS, _>(&pk, circuit, &mut rng).unwrap();
             write_vk_proof::<MNT6_753>(&vk, &proof, output_path);
         }
         "wrap5" => {
-            let circuit =
-                WrapCircuit::<RECEIPT_PUBLIC_INPUTS>::deserialize_compressed(&witness_bytes[..])
-                    .expect("deserialize witness");
+            let circuit = WrapCircuit::<RECEIPT_PUBLIC_INPUTS>::deserialize_compressed(&witness_bytes[..])
+                .expect("deserialize witness");
             let inner_vk = circuit.inner_vk.clone();
-            let (pk, vk) =
-                cloakkchain_circuit_wrap::setup::<RECEIPT_PUBLIC_INPUTS, _>(inner_vk, &mut rng)
-                    .unwrap();
-            let proof =
-                cloakkchain_circuit_wrap::prove::<RECEIPT_PUBLIC_INPUTS, _>(&pk, circuit, &mut rng)
-                    .unwrap();
+            let (pk, vk) = cloakkchain_circuit_wrap::setup::<RECEIPT_PUBLIC_INPUTS, _>(inner_vk, &mut rng).unwrap();
+            let proof = cloakkchain_circuit_wrap::prove::<RECEIPT_PUBLIC_INPUTS, _>(&pk, circuit, &mut rng).unwrap();
             write_vk_proof::<MNT6_753>(&vk, &proof, output_path);
         }
         other => panic!("unknown --internal-kind {other}"),
@@ -324,9 +275,8 @@ fn print_prove_table(stats: &[ProveStats]) {
     println!("{}", "-".repeat(w));
     let (mut tp, mut tv) = (0f64, 0f64);
     for s in stats {
-        let entry_col = s
-            .entry_bytes
-            .map_or("          —".into(), |b| format!("{:>8} B", b));
+
+        let entry_col = s.entry_bytes.map_or("          —".into(), |b| format!("{:>8} B", b));
         println!(
             "{:<28} {:>5}  {:>11} {:>7.1} s  {:>8.1} ms  {:>11}  {}  {:>11}",
             s.name,
@@ -360,12 +310,8 @@ fn main() {
     let args = Args::parse();
 
     if let Some(kind) = args.internal_kind {
-        let witness_path = args
-            .internal_witness
-            .expect("--internal-witness required with --internal-kind");
-        let output_path = args
-            .internal_output
-            .expect("--internal-output required with --internal-kind");
+        let witness_path = args.internal_witness.expect("--internal-witness required with --internal-kind");
+        let output_path = args.internal_output.expect("--internal-output required with --internal-kind");
         run_internal_step(&kind, &witness_path, &output_path);
         return;
     }
@@ -400,8 +346,7 @@ fn run_execute(genesis: &Party, genesis_coin: &Coin, alice_coin: &Coin) {
     let output_commitments = pad_outputs(&[alice_coin.commitment()]);
     let append_path = append_path_for_next(&[]);
     let board_root = compute_root_from_path(Fr::from(0u64), 0, &append_path);
-    let own_nullifier =
-        poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
+    let own_nullifier = poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
     let tree = NullifierTree::new();
 
     let circuit = GenesisSpendCircuit {
@@ -410,22 +355,20 @@ fn run_execute(genesis: &Party, genesis_coin: &Coin, alice_coin: &Coin) {
         board_root: Some(board_root),
         current_nullifier_root: Some(tree.root()),
         sk_p: Some(genesis.sk_p),
-        input_coins: [Some(genesis_coin.clone())],
+        input_coins: [Some(genesis_coin.clone()), None],
         output_coins: [Some(alice_coin.clone()), None],
         entry_position: Some(0),
         append_path: Some(append_path),
-        own_nullifier_nonmembership: [Some(tree.prove_non_membership(own_nullifier))],
+        own_nullifier_nonmembership: [Some(tree.prove_non_membership(own_nullifier)), None],
     };
 
     let cs = ConstraintSystem::<Fr>::new_ref();
-    circuit
-        .generate_constraints(cs.clone())
-        .expect("synthesize constraints");
+    circuit.generate_constraints(cs.clone()).expect("synthesize constraints");
     let satisfied = cs.is_satisfied().expect("check satisfiability");
     println!("  constraints: {}", cs.num_constraints());
     println!("  satisfied:   {satisfied}");
     assert!(satisfied);
-    println!("\nRun --prove for the full chain (nine real Groth16 proofs).");
+    println!("\nRun --prove for the full chain (nine real GM17 proofs).");
 }
 
 fn run_prove() {
@@ -443,10 +386,8 @@ fn run_prove() {
     let alice_coin = coin(0xA2, 100, alice.pk_p);
     let genesis_outputs = pad_outputs(&[alice_coin.commitment()]);
     let genesis_append_path = append_path_for_next(&entries);
-    let genesis_board_root =
-        compute_root_from_path(Fr::from(0u64), entries.len(), &genesis_append_path);
-    let genesis_own_nullifier =
-        poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
+    let genesis_board_root = compute_root_from_path(Fr::from(0u64), entries.len(), &genesis_append_path);
+    let genesis_own_nullifier = poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
     let empty_tree = NullifierTree::new();
 
     let genesis_circuit = GenesisSpendCircuit {
@@ -455,29 +396,21 @@ fn run_prove() {
         board_root: Some(genesis_board_root),
         current_nullifier_root: Some(empty_tree.root()),
         sk_p: Some(genesis.sk_p),
-        input_coins: [Some(genesis_coin.clone())],
+        input_coins: [Some(genesis_coin.clone()), None],
         output_coins: [Some(alice_coin.clone()), None],
         entry_position: Some(entries.len() as u64),
         append_path: Some(genesis_append_path.clone()),
-        own_nullifier_nonmembership: [Some(empty_tree.prove_non_membership(genesis_own_nullifier))],
+        own_nullifier_nonmembership: [Some(empty_tree.prove_non_membership(genesis_own_nullifier)), None],
     };
     let genesis_public_inputs: [Fr; GENESIS_SPEND_PUBLIC_INPUTS] =
-        GenesisSpendCircuit::public_inputs(
-            genesis.pk_p,
-            genesis_outputs,
-            genesis_board_root,
-            empty_tree.root(),
-        )
-        .try_into()
-        .unwrap();
+        GenesisSpendCircuit::public_inputs(genesis.pk_p, genesis_outputs, genesis_board_root, empty_tree.root())
+            .try_into()
+            .unwrap();
 
     let (genesis_vk, genesis_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("genesis", &genesis_circuit);
     let t = Instant::now();
-    assert!(
-        cloakkchain_circuit_spend::verify(&genesis_vk, &genesis_public_inputs, &genesis_proof)
-            .unwrap()
-    );
+    assert!(cloakkchain_circuit_spend::verify(&genesis_vk, &genesis_public_inputs, &genesis_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -491,16 +424,10 @@ fn run_prove() {
         peak_mem_kb,
     });
 
-    let (mut tx0, s0, r0) = make_tx(
-        0,
-        genesis.enc_sk,
-        &genesis.sk_p,
-        &[genesis_coin.clone()],
-        &[(alice_coin.clone(), alice.enc_pk)],
-    );
+    let (mut tx0, s0, r0) =
+        make_tx(0, genesis.enc_sk, &genesis.sk_p, &[genesis_coin.clone()], &[(alice_coin.clone(), alice.enc_pk)]);
     tx0.spend_proof = ark_serialize_bytes(&genesis_proof);
-    let genesis_entry =
-        cloakkchain_lib::encrypt_tx(&tx0, genesis_coin.commitment(), &genesis.sk_p, &r0, s0);
+    let genesis_entry = cloakkchain_lib::encrypt_tx(&tx0, genesis_coin.commitment(), &genesis.sk_p, &r0, s0);
     entries.push(genesis_entry.clone());
     let entry0_bytes = bincode::serialize(&genesis_entry).map(|v| v.len()).ok();
 
@@ -512,15 +439,9 @@ fn run_prove() {
     };
     let (wrap_genesis_vk, wrap_genesis_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT6_753>("wrap6", &wrap_genesis_circuit);
-    let wrap_genesis_public_inputs =
-        cloakkchain_circuit_wrap::public_input_chunks(&genesis_public_inputs);
+    let wrap_genesis_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&genesis_public_inputs);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_wrap::verify(
-        &wrap_genesis_vk,
-        &wrap_genesis_public_inputs,
-        &wrap_genesis_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_wrap::verify(&wrap_genesis_vk, &wrap_genesis_public_inputs, &wrap_genesis_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -535,16 +456,9 @@ fn run_prove() {
     });
 
     println!("\n--- Alice scans slot 0, builds her receipt ---");
-    let alice_tx =
-        scan_entry(&alice.enc_sk, &genesis_entry).expect("Alice must be able to decrypt slot 0");
-    assert!(
-        alice_tx.receives_coin(&alice_coin.commitment()),
-        "Alice's tx must transfer her coin"
-    );
-    println!(
-        "  [{}] discovered coin (value={}) at slot 0",
-        alice.name, alice_coin.value
-    );
+    let alice_tx = scan_entry(&alice.enc_sk, &genesis_entry).expect("Alice must be able to decrypt slot 0");
+    assert!(alice_tx.receives_coin(&alice_coin.commitment()), "Alice's tx must transfer her coin");
+    println!("  [{}] discovered coin (value={}) at slot 0", alice.name, alice_coin.value);
     println!("  Proving Alice's receipt: this coin was really created by a verified spend, is really published on the board at this slot, and that spend's own parent wasn't a double-spend — all without revealing tag/rand/value.");
 
     let alice_receipt_board_root =
@@ -572,25 +486,14 @@ fn run_prove() {
         coin_rand: Some(alice_coin.rand),
     };
     let alice_receipt_public_inputs: [Fr; RECEIPT_PUBLIC_INPUTS] =
-        ReceiptStepCircuit::public_inputs(
-            apx,
-            apy,
-            alice_coin.commitment(),
-            alice_receipt_board_root,
-            0,
-        )
-        .try_into()
-        .unwrap();
+        ReceiptStepCircuit::public_inputs(apx, apy, alice_coin.commitment(), alice_receipt_board_root, 0)
+            .try_into()
+            .unwrap();
 
     let (alice_receipt_vk, alice_receipt_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("receipt", &alice_receipt_circuit);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_coinproof::verify(
-        &alice_receipt_vk,
-        &alice_receipt_public_inputs,
-        &alice_receipt_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_coinproof::verify(&alice_receipt_vk, &alice_receipt_public_inputs, &alice_receipt_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -612,15 +515,9 @@ fn run_prove() {
     };
     let (wrap_alice_receipt_vk, wrap_alice_receipt_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT6_753>("wrap5", &wrap_alice_receipt_circuit);
-    let wrap_alice_receipt_public_inputs =
-        cloakkchain_circuit_wrap::public_input_chunks(&alice_receipt_public_inputs);
+    let wrap_alice_receipt_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&alice_receipt_public_inputs);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_wrap::verify(
-        &wrap_alice_receipt_vk,
-        &wrap_alice_receipt_public_inputs,
-        &wrap_alice_receipt_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_wrap::verify(&wrap_alice_receipt_vk, &wrap_alice_receipt_public_inputs, &wrap_alice_receipt_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -641,10 +538,8 @@ fn run_prove() {
     let alice_spend_outputs = pad_outputs(&[bob_coin.commitment(), change_coin.commitment()]);
 
     let alice_spend_append_path = append_path_for_next(&entries);
-    let alice_spend_board_root =
-        compute_root_from_path(Fr::from(0u64), entries.len(), &alice_spend_append_path);
-    let alice_own_nullifier =
-        poseidon_hash(&[alice_coin.commitment(), fold_owner_scalar(&alice.sk_p)]);
+    let alice_spend_board_root = compute_root_from_path(Fr::from(0u64), entries.len(), &alice_spend_append_path);
+    let alice_own_nullifier = poseidon_hash(&[alice_coin.commitment(), fold_owner_scalar(&alice.sk_p)]);
     let mut tree_after_genesis = NullifierTree::new();
     tree_after_genesis.insert(genesis_own_nullifier);
 
@@ -654,36 +549,28 @@ fn run_prove() {
         board_root: Some(alice_spend_board_root),
         current_nullifier_root: Some(tree_after_genesis.root()),
         sk_p: Some(alice.sk_p),
-        input_coins: [Some(alice_coin.clone())],
+        input_coins: [Some(alice_coin.clone()), None],
         output_coins: [Some(bob_coin.clone()), Some(change_coin.clone())],
         entry_position: Some(entries.len() as u64),
         append_path: Some(alice_spend_append_path.clone()),
-        own_nullifier_nonmembership: [Some(
-            tree_after_genesis.prove_non_membership(alice_own_nullifier),
-        )],
+        own_nullifier_nonmembership: [Some(tree_after_genesis.prove_non_membership(alice_own_nullifier)), None],
         wrap_vk: wrap_alice_receipt_vk.clone(),
-        input_receipt_proofs: [Some(wrap_alice_receipt_proof)],
-        input_receipt_public_inputs: [Some(alice_receipt_public_inputs)],
+        input_receipt_proofs: [Some(wrap_alice_receipt_proof), None],
+        input_receipt_public_inputs: [Some(alice_receipt_public_inputs), None],
     };
-    let alice_spend_public_inputs: [Fr; GENESIS_SPEND_PUBLIC_INPUTS] =
-        SpendStepCircuit::public_inputs(
-            alice.pk_p,
-            alice_spend_outputs,
-            alice_spend_board_root,
-            tree_after_genesis.root(),
-        )
-        .try_into()
-        .unwrap();
+    let alice_spend_public_inputs: [Fr; GENESIS_SPEND_PUBLIC_INPUTS] = SpendStepCircuit::public_inputs(
+        alice.pk_p,
+        alice_spend_outputs,
+        alice_spend_board_root,
+        tree_after_genesis.root(),
+    )
+    .try_into()
+    .unwrap();
 
     let (alice_spend_vk, alice_spend_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("spend_non_genesis", &alice_spend_circuit);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_spend::verify_non_genesis(
-        &alice_spend_vk,
-        &alice_spend_public_inputs,
-        &alice_spend_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_spend::verify_non_genesis(&alice_spend_vk, &alice_spend_public_inputs, &alice_spend_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -702,14 +589,10 @@ fn run_prove() {
         alice.enc_sk,
         &alice.sk_p,
         &[alice_coin.clone()],
-        &[
-            (bob_coin.clone(), bob.enc_pk),
-            (change_coin.clone(), alice.enc_pk),
-        ],
+        &[(bob_coin.clone(), bob.enc_pk), (change_coin.clone(), alice.enc_pk)],
     );
     tx1.spend_proof = ark_serialize_bytes(&alice_spend_proof);
-    let alice_entry =
-        cloakkchain_lib::encrypt_tx(&tx1, alice_coin.commitment(), &alice.sk_p, &r1, s1);
+    let alice_entry = cloakkchain_lib::encrypt_tx(&tx1, alice_coin.commitment(), &alice.sk_p, &r1, s1);
     entries.push(alice_entry.clone());
     let entry1_bytes = bincode::serialize(&alice_entry).map(|v| v.len()).ok();
 
@@ -721,15 +604,9 @@ fn run_prove() {
     };
     let (wrap_alice_spend_vk, wrap_alice_spend_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT6_753>("wrap6", &wrap_alice_spend_circuit);
-    let wrap_alice_spend_public_inputs =
-        cloakkchain_circuit_wrap::public_input_chunks(&alice_spend_public_inputs);
+    let wrap_alice_spend_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&alice_spend_public_inputs);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_wrap::verify(
-        &wrap_alice_spend_vk,
-        &wrap_alice_spend_public_inputs,
-        &wrap_alice_spend_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_wrap::verify(&wrap_alice_spend_vk, &wrap_alice_spend_public_inputs, &wrap_alice_spend_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -746,10 +623,7 @@ fn run_prove() {
     println!("\n--- Bob scans slot 1, builds his receipt ---");
     let bob_tx = scan_entry(&bob.enc_sk, &alice_entry).expect("Bob must be able to decrypt slot 1");
     assert!(bob_tx.receives_coin(&bob_coin.commitment()));
-    println!(
-        "  [{}] discovered coin (value={}) at slot 1",
-        bob.name, bob_coin.value
-    );
+    println!("  [{}] discovered coin (value={}) at slot 1", bob.name, bob_coin.value);
     println!("  Proving Bob's receipt (second generation: recursively verifies a wrapped *spend* proof this time, not a wrapped genesis proof — same circuit, keyed to Alice's spend's verifying key instead).");
 
     let bob_receipt_board_root =
@@ -776,25 +650,15 @@ fn run_prove() {
         coin_value: Some(bob_coin.value),
         coin_rand: Some(bob_coin.rand),
     };
-    let bob_receipt_public_inputs: [Fr; RECEIPT_PUBLIC_INPUTS] = ReceiptStepCircuit::public_inputs(
-        bpx,
-        bpy,
-        bob_coin.commitment(),
-        bob_receipt_board_root,
-        1,
-    )
-    .try_into()
-    .unwrap();
+    let bob_receipt_public_inputs: [Fr; RECEIPT_PUBLIC_INPUTS] =
+        ReceiptStepCircuit::public_inputs(bpx, bpy, bob_coin.commitment(), bob_receipt_board_root, 1)
+            .try_into()
+            .unwrap();
 
     let (bob_receipt_vk, bob_receipt_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("receipt", &bob_receipt_circuit);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_coinproof::verify(
-        &bob_receipt_vk,
-        &bob_receipt_public_inputs,
-        &bob_receipt_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_coinproof::verify(&bob_receipt_vk, &bob_receipt_public_inputs, &bob_receipt_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -816,15 +680,9 @@ fn run_prove() {
     };
     let (wrap_bob_receipt_vk, wrap_bob_receipt_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT6_753>("wrap5", &wrap_bob_receipt_circuit);
-    let wrap_bob_receipt_public_inputs =
-        cloakkchain_circuit_wrap::public_input_chunks(&bob_receipt_public_inputs);
+    let wrap_bob_receipt_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&bob_receipt_public_inputs);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_wrap::verify(
-        &wrap_bob_receipt_vk,
-        &wrap_bob_receipt_public_inputs,
-        &wrap_bob_receipt_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_wrap::verify(&wrap_bob_receipt_vk, &wrap_bob_receipt_public_inputs, &wrap_bob_receipt_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -844,8 +702,7 @@ fn run_prove() {
     let bob_spend_outputs = pad_outputs(&[carol_coin.commitment()]);
 
     let bob_spend_append_path = append_path_for_next(&entries);
-    let bob_spend_board_root =
-        compute_root_from_path(Fr::from(0u64), entries.len(), &bob_spend_append_path);
+    let bob_spend_board_root = compute_root_from_path(Fr::from(0u64), entries.len(), &bob_spend_append_path);
     let bob_own_nullifier = poseidon_hash(&[bob_coin.commitment(), fold_owner_scalar(&bob.sk_p)]);
     let mut tree_after_alice_spend = tree_after_genesis.clone();
     tree_after_alice_spend.insert(alice_own_nullifier);
@@ -856,16 +713,14 @@ fn run_prove() {
         board_root: Some(bob_spend_board_root),
         current_nullifier_root: Some(tree_after_alice_spend.root()),
         sk_p: Some(bob.sk_p),
-        input_coins: [Some(bob_coin.clone())],
+        input_coins: [Some(bob_coin.clone()), None],
         output_coins: [Some(carol_coin.clone()), None],
         entry_position: Some(entries.len() as u64),
         append_path: Some(bob_spend_append_path),
-        own_nullifier_nonmembership: [Some(
-            tree_after_alice_spend.prove_non_membership(bob_own_nullifier),
-        )],
+        own_nullifier_nonmembership: [Some(tree_after_alice_spend.prove_non_membership(bob_own_nullifier)), None],
         wrap_vk: wrap_bob_receipt_vk.clone(),
-        input_receipt_proofs: [Some(wrap_bob_receipt_proof)],
-        input_receipt_public_inputs: [Some(bob_receipt_public_inputs)],
+        input_receipt_proofs: [Some(wrap_bob_receipt_proof), None],
+        input_receipt_public_inputs: [Some(bob_receipt_public_inputs), None],
     };
     let bob_spend_public_inputs = SpendStepCircuit::public_inputs(
         bob.pk_p,
@@ -877,12 +732,7 @@ fn run_prove() {
     let (bob_spend_vk, bob_spend_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("spend_non_genesis", &bob_spend_circuit);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_spend::verify_non_genesis(
-        &bob_spend_vk,
-        &bob_spend_public_inputs,
-        &bob_spend_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_spend::verify_non_genesis(&bob_spend_vk, &bob_spend_public_inputs, &bob_spend_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
     stats.push(ProveStats {
@@ -896,26 +746,18 @@ fn run_prove() {
         peak_mem_kb,
     });
 
-    let (mut tx2, s2, r2) = make_tx(
-        2,
-        bob.enc_sk,
-        &bob.sk_p,
-        &[bob_coin.clone()],
-        &[(carol_coin.clone(), carol.enc_pk)],
-    );
+    let (mut tx2, s2, r2) =
+        make_tx(2, bob.enc_sk, &bob.sk_p, &[bob_coin.clone()], &[(carol_coin.clone(), carol.enc_pk)]);
     tx2.spend_proof = ark_serialize_bytes(&bob_spend_proof);
     let bob_entry = cloakkchain_lib::encrypt_tx(&tx2, bob_coin.commitment(), &bob.sk_p, &r2, s2);
     entries.push(bob_entry.clone());
+
     stats.last_mut().unwrap().entry_bytes = bincode::serialize(&bob_entry).map(|v| v.len()).ok();
 
     println!("\n--- Carol scans slot 2 ---");
-    let carol_tx =
-        scan_entry(&carol.enc_sk, &bob_entry).expect("Carol must be able to decrypt slot 2");
+    let carol_tx = scan_entry(&carol.enc_sk, &bob_entry).expect("Carol must be able to decrypt slot 2");
     assert!(carol_tx.receives_coin(&carol_coin.commitment()));
-    println!(
-        "  [{}] discovered coin (value={}) at slot 2 — end of chain (no further receipt built)",
-        carol.name, carol_coin.value
-    );
+    println!("  [{}] discovered coin (value={}) at slot 2 — end of chain (no further receipt built)", carol.name, carol_coin.value);
 
     print_prove_table(&stats);
 }
@@ -952,15 +794,13 @@ fn run_prove_grid_cell() {
         let genesis_outputs = pad_outputs(&[alice_coin.commitment()]);
         let g_append_path = append_path_for_next(&entries);
         let g_board_root = compute_root_from_path(Fr::from(0u64), entries.len(), &g_append_path);
-        let g_own_nullifier =
-            poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
+        let g_own_nullifier = poseidon_hash(&[genesis_coin.commitment(), fold_owner_scalar(&genesis.sk_p)]);
         let nullifier_root_before = tree.root();
         let own_nonmembership = tree.prove_non_membership(g_own_nullifier);
 
         let mut g_input_coins: [Option<Coin>; MAX_INPUTS] = std::array::from_fn(|_| None);
         g_input_coins[0] = Some(genesis_coin.clone());
-        let mut g_nonmembership: [Option<NonMembershipWitness>; MAX_INPUTS] =
-            std::array::from_fn(|_| None);
+        let mut g_nonmembership: [Option<NonMembershipWitness>; MAX_INPUTS] = std::array::from_fn(|_| None);
         g_nonmembership[0] = Some(own_nonmembership.clone());
         let mut g_output_coins: [Option<Coin>; MAX_OUTPUTS] = std::array::from_fn(|_| None);
         g_output_coins[0] = Some(alice_coin.clone());
@@ -978,24 +818,14 @@ fn run_prove_grid_cell() {
             own_nullifier_nonmembership: g_nonmembership,
         };
         let genesis_public_inputs: [Fr; GENESIS_SPEND_PUBLIC_INPUTS] =
-            GenesisSpendCircuit::public_inputs(
-                genesis.pk_p,
-                genesis_outputs,
-                g_board_root,
-                nullifier_root_before,
-            )
-            .try_into()
-            .unwrap();
+            GenesisSpendCircuit::public_inputs(genesis.pk_p, genesis_outputs, g_board_root, nullifier_root_before)
+                .try_into()
+                .unwrap();
 
         let (genesis_vk, genesis_proof, prove_secs, peak_mem_kb) =
             run_step_subprocess::<_, MNT4_753>("genesis", &genesis_circuit);
         let t = Instant::now();
-        assert!(cloakkchain_circuit_spend::verify(
-            &genesis_vk,
-            &genesis_public_inputs,
-            &genesis_proof
-        )
-        .unwrap());
+        assert!(cloakkchain_circuit_spend::verify(&genesis_vk, &genesis_public_inputs, &genesis_proof).unwrap());
         let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
         println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
         stats.push(ProveStats {
@@ -1017,8 +847,7 @@ fn run_prove_grid_cell() {
             &[(alice_coin.clone(), alice.enc_pk)],
         );
         tx.spend_proof = ark_serialize_bytes(&genesis_proof);
-        let entry =
-            cloakkchain_lib::encrypt_tx(&tx, genesis_coin.commitment(), &genesis.sk_p, &r, s);
+        let entry = cloakkchain_lib::encrypt_tx(&tx, genesis_coin.commitment(), &genesis.sk_p, &r, s);
         let entry_bytes = bincode::serialize(&entry).map(|v| v.len()).ok();
         let entry_position = entries.len();
         entries.push(entry.clone());
@@ -1031,15 +860,9 @@ fn run_prove_grid_cell() {
         };
         let (wrap_genesis_vk, wrap_genesis_proof, prove_secs, peak_mem_kb) =
             run_step_subprocess::<_, MNT6_753>("wrap6", &wrap_genesis_circuit);
-        let wrap_genesis_public_inputs =
-            cloakkchain_circuit_wrap::public_input_chunks(&genesis_public_inputs);
+        let wrap_genesis_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&genesis_public_inputs);
         let t = Instant::now();
-        assert!(cloakkchain_circuit_wrap::verify(
-            &wrap_genesis_vk,
-            &wrap_genesis_public_inputs,
-            &wrap_genesis_proof
-        )
-        .unwrap());
+        assert!(cloakkchain_circuit_wrap::verify(&wrap_genesis_vk, &wrap_genesis_public_inputs, &wrap_genesis_proof).unwrap());
         let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
         println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
         stats.push(ProveStats {
@@ -1053,11 +876,8 @@ fn run_prove_grid_cell() {
             peak_mem_kb,
         });
 
-        let receipt_board_root = compute_root_from_path(
-            merkle_leaf(entry_position, &entry),
-            entry_position,
-            &g_append_path,
-        );
+        let receipt_board_root =
+            compute_root_from_path(merkle_leaf(entry_position, &entry), entry_position, &g_append_path);
         let (apx, apy) = owner_pk_to_field_pair(&alice.pk_p);
         let receipt_circuit = ReceiptStepCircuit {
             owner_pk_x: Some(apx),
@@ -1092,12 +912,7 @@ fn run_prove_grid_cell() {
         let (receipt_vk, receipt_proof, prove_secs, peak_mem_kb) =
             run_step_subprocess::<_, MNT4_753>("receipt", &receipt_circuit);
         let t = Instant::now();
-        assert!(cloakkchain_circuit_coinproof::verify(
-            &receipt_vk,
-            &receipt_public_inputs,
-            &receipt_proof
-        )
-        .unwrap());
+        assert!(cloakkchain_circuit_coinproof::verify(&receipt_vk, &receipt_public_inputs, &receipt_proof).unwrap());
         let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
         println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
         stats.push(ProveStats {
@@ -1118,15 +933,9 @@ fn run_prove_grid_cell() {
         };
         let (wrap_receipt_vk, wrap_receipt_proof, prove_secs, peak_mem_kb) =
             run_step_subprocess::<_, MNT6_753>("wrap5", &wrap_receipt_circuit);
-        let wrap_receipt_public_inputs =
-            cloakkchain_circuit_wrap::public_input_chunks(&receipt_public_inputs);
+        let wrap_receipt_public_inputs = cloakkchain_circuit_wrap::public_input_chunks(&receipt_public_inputs);
         let t = Instant::now();
-        assert!(cloakkchain_circuit_wrap::verify(
-            &wrap_receipt_vk,
-            &wrap_receipt_public_inputs,
-            &wrap_receipt_proof
-        )
-        .unwrap());
+        assert!(cloakkchain_circuit_wrap::verify(&wrap_receipt_vk, &wrap_receipt_public_inputs, &wrap_receipt_proof).unwrap());
         let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
         println!("  Wrapped in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
         stats.push(ProveStats {
@@ -1144,10 +953,7 @@ fn run_prove_grid_cell() {
         input_receipt_wraps.push((wrap_receipt_proof, receipt_public_inputs.to_vec()));
         alice_inputs.push(AliceInput {
             coin: alice_coin.clone(),
-            own_nullifier: poseidon_hash(&[
-                alice_coin.commitment(),
-                fold_owner_scalar(&alice.sk_p),
-            ]),
+            own_nullifier: poseidon_hash(&[alice_coin.commitment(), fold_owner_scalar(&alice.sk_p)]),
         });
     }
 
@@ -1159,18 +965,15 @@ fn run_prove_grid_cell() {
     if MAX_OUTPUTS > 1 {
         output_coins_vec.push(coin(0xC1, total - bob_val, alice.pk_p));
     }
-    let real_output_commitments: Vec<Fr> =
-        output_coins_vec.iter().map(|c| c.commitment()).collect();
+    let real_output_commitments: Vec<Fr> = output_coins_vec.iter().map(|c| c.commitment()).collect();
     let spend_outputs = pad_outputs(&real_output_commitments);
 
     let spend_append_path = append_path_for_next(&entries);
-    let spend_board_root =
-        compute_root_from_path(Fr::from(0u64), entries.len(), &spend_append_path);
+    let spend_board_root = compute_root_from_path(Fr::from(0u64), entries.len(), &spend_append_path);
     let nullifier_root_before_spend = tree.root();
 
     let mut spend_input_coins: [Option<Coin>; MAX_INPUTS] = std::array::from_fn(|_| None);
-    let mut spend_nonmembership: [Option<NonMembershipWitness>; MAX_INPUTS] =
-        std::array::from_fn(|_| None);
+    let mut spend_nonmembership: [Option<NonMembershipWitness>; MAX_INPUTS] = std::array::from_fn(|_| None);
     for (i, ai) in alice_inputs.iter().enumerate() {
         spend_input_coins[i] = Some(ai.coin.clone());
         spend_nonmembership[i] = Some(tree.prove_non_membership(ai.own_nullifier));
@@ -1215,17 +1018,11 @@ fn run_prove_grid_cell() {
     let (spend_vk, spend_proof, prove_secs, peak_mem_kb) =
         run_step_subprocess::<_, MNT4_753>("spend_non_genesis", &spend_circuit);
     let t = Instant::now();
-    assert!(cloakkchain_circuit_spend::verify_non_genesis(
-        &spend_vk,
-        &spend_public_inputs,
-        &spend_proof
-    )
-    .unwrap());
+    assert!(cloakkchain_circuit_spend::verify_non_genesis(&spend_vk, &spend_public_inputs, &spend_proof).unwrap());
     let verify_ms = t.elapsed().as_secs_f64() * 1000.0;
     println!("  Proved in {prove_secs:.1}s, verified in {verify_ms:.1}ms.");
 
-    let mut spend_outputs_for_tx: Vec<(Coin, [u8; 32])> =
-        vec![(output_coins_vec[0].clone(), bob.enc_pk)];
+    let mut spend_outputs_for_tx: Vec<(Coin, [u8; 32])> = vec![(output_coins_vec[0].clone(), bob.enc_pk)];
     if output_coins_vec.len() > 1 {
         spend_outputs_for_tx.push((output_coins_vec[1].clone(), alice.enc_pk));
     }
@@ -1233,10 +1030,7 @@ fn run_prove_grid_cell() {
         100,
         alice.enc_sk,
         &alice.sk_p,
-        &alice_inputs
-            .iter()
-            .map(|ai| ai.coin.clone())
-            .collect::<Vec<_>>(),
+        &alice_inputs.iter().map(|ai| ai.coin.clone()).collect::<Vec<_>>(),
         &spend_outputs_for_tx,
     );
     spend_tx.spend_proof = ark_serialize_bytes(&spend_proof);
