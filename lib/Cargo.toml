@@ -17,3 +17,7 @@ ark-serialize = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["sponge"] }
 ark-mnt4-753 = { workspace = true, features = ["curve"] }
 ark-mnt6-753 = { workspace = true }
+
+[features]
+
+two-inputs = []

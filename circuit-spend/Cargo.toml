@@ -18,3 +18,11 @@ ark-r1cs-std = { workspace = true }
 ark-crypto-primitives = { workspace = true, features = ["r1cs", "sponge", "crh"] }
 ark-mnt4-753 = { workspace = true, features = ["r1cs", "curve"] }
 ark-mnt6-753 = { workspace = true, features = ["r1cs"] }
+
+[features]
+
+groth16 = ["cloakkchain-circuit-wrap/groth16"]
+
+single-output = []
+
+two-inputs = ["cloakkchain-lib/two-inputs"]
